@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  Copyright 2025 snood21
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+
+<?import javafx.geometry.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox alignment="TOP_CENTER" prefHeight="577.0" prefWidth="755.0" spacing="20.0" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="io.github.snood21.update_calculator_1c.MainFormController">
+   <padding>
+      <Insets bottom="20.0" left="20.0" right="20.0" top="20.0" />
+   </padding>
+   <HBox VBox.vgrow="NEVER">
+      <Label prefHeight="24.0" text="Файл" />
+      <Separator orientation="VERTICAL" />
+      <TextField fx:id="filePathField" prefWidth="400.0" />
+      <Button fx:id="chooseFileButton" alignment="BOTTOM_LEFT" mnemonicParsing="false" onAction="#showFileChooserDialog" text="...">
+         <tooltip>
+            <Tooltip text="Выбрать файл" />
+         </tooltip>
+      </Button>
+      <Separator orientation="VERTICAL" />
+      <Button mnemonicParsing="false" onAction="#readFile" text="Прочитать файл" />
+   </HBox>
+   <HBox VBox.vgrow="NEVER">
+      <Label prefHeight="24.0" text="Номер столбца версии" />
+      <Spinner fx:id="columnVersionSpinner" editable="true" />
+      <Separator orientation="VERTICAL" />
+      <Label prefHeight="24.0" text="Номер столбца обновляемых версий" />
+      <Spinner fx:id="columnFromVersionsSpinner" editable="true" />
+   </HBox>
+   <HBox VBox.vgrow="NEVER">
+      <ComboBox fx:id="firstVersionComboBox" onKeyPressed="#firstVersionComboBoxOnKeyPressed" promptText="Выберите текущую версию" />
+      <Separator orientation="VERTICAL" />
+      <ComboBox fx:id="lastVersionComboBox" onKeyPressed="#lastVersionComboBoxOnKeyPressed" promptText="Выберите целевую версию" />
+   </HBox>
+   <HBox VBox.vgrow="NEVER">
+      <Button mnemonicParsing="false" onAction="#calculateUpdates" text="Рассчитать обновления" />
+      <Separator orientation="VERTICAL" />
+      <Button mnemonicParsing="false" onAction="#saveResult" text="Сохранить результат" />
+   </HBox>
+   <ListView fx:id="resultListView" onKeyPressed="#resultListViewOnKeyPressed" VBox.vgrow="ALWAYS" />
+   <HBox alignment="CENTER_RIGHT" prefHeight="100.0" prefWidth="200.0" VBox.vgrow="ALWAYS">
+      <Label fx:id="statusLabel" HBox.hgrow="ALWAYS" maxWidth="Infinity" visible="false" />
+      <Button mnemonicParsing="false" onAction="#showAboutDialog" text="О программе" />
+   </HBox>
+</VBox>

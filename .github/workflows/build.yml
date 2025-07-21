@@ -1,0 +1,200 @@
+name: Build Installers
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+          java-package: jdk+fx
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y fakeroot rpm libfuse2
+
+      - name: Setup Gradle with caching
+        uses: gradle/actions/setup-gradle@v4
+
+      - run: chmod +x ./gradlew
+      - run: ./gradlew clean
+
+      - name: Build DEB package
+        run: ./gradlew clean jpackage -PinstallerType=deb
+
+      - name: Upload DEB package
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: build/jpackage/update-calculator-1c*.deb
+
+      - name: Build RPM package
+        run: ./gradlew clean jpackage -PinstallerType=rpm
+
+      - name: Upload RPM package
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm
+          path: build/jpackage/update-calculator-1c*.rpm
+
+      - name: Find output directory
+        id: output-dir
+        run: |
+          DIR=$(find build/jpackage -maxdepth 1 -type d -name "update-calculator-1c*" | head -n 1)
+          echo "OUTPUT_DIR=$DIR" >> $GITHUB_ENV
+
+      - name: Check packages
+        run: ls -lh build/jpackage/
+
+      - name: Get .rpm filename and make zip with version
+        run: |
+          RPM_NAME=$(find build/jpackage -name "*.rpm" -exec basename {} \;)
+          BASENAME="${RPM_NAME%.rpm}"
+          echo "BASENAME=${BASENAME}" >> $GITHUB_ENV
+          cd ${{ env.OUTPUT_DIR }}
+          zip -r "../../../$BASENAME-portable-linux.zip" ./
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-linux
+          path: ${{ github.workspace }}/${{ env.BASENAME }}-portable-linux.zip
+
+      - name: Setup AppImageTool
+        run: |
+          wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
+          chmod +x appimagetool
+
+      - name: Create AppImage structure
+        run: |
+          rm -rf AppDir
+          mkdir -p AppDir/usr/bin AppDir/usr/lib
+          cp ${{ env.OUTPUT_DIR }}/bin/update-calculator-1c AppDir/usr/bin/
+          cp -r ${{ env.OUTPUT_DIR }}/lib/* AppDir/usr/lib/
+          cp src/main/resources/io/github/snood21/update_calculator_1c/icons/icon.png AppDir/update-calculator-1c.png || true
+          echo '#!/bin/bash
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/update-calculator-1c" "$@"' > AppDir/AppRun
+          chmod +x AppDir/AppRun
+          echo '[Desktop Entry]
+          Type=Application
+          Name=Update Calculator 1C
+          Exec=update-calculator-1c
+          Icon=update-calculator-1c
+          Categories=Utility;' > AppDir/update-calculator-1c.desktop
+
+      - name: Build AppImage
+        run: |
+          ./appimagetool AppDir $BASENAME.AppImage
+          chmod +x $BASENAME.AppImage
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: ${{ github.workspace }}/${{ env.BASENAME }}.AppImage
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+          java-package: jdk+fx
+
+      - name: Setup Gradle with caching
+        uses: gradle/actions/setup-gradle@v4
+
+      - run: chmod +x ./gradlew
+      - run: git config --global core.autocrlf true
+
+      - name: Build EXE
+        run: ./gradlew clean jpackage -PinstallerType=exe
+
+      - name: Get EXE basename
+        id: get-basename
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path build/jpackage -Filter "*.exe" | Select-Object -First 1
+          $basename = [System.IO.Path]::GetFileNameWithoutExtension($exe.Name)
+          echo "EXE_BASENAME=$basename" >> $env:GITHUB_ENV
+
+      - name: Make portable zip with version
+        shell: pwsh
+        run: |
+          $folder = Join-Path "build/jpackage" "update-calculator-1c"
+          if (-not (Test-Path $folder)) {
+            Write-Error "Папка $folder не найдена"
+            exit 1
+          }
+          $zipPath = "build/jpackage/${env:EXE_BASENAME}-portable-windows.zip"
+          Compress-Archive -Path $folder -DestinationPath $zipPath
+
+      - name: Upload exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe
+          path: build/jpackage/update-calculator-1c*.exe
+
+      - name: Upload portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-windows
+          path: build/jpackage/update-calculator-1c*-portable-windows.zip
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [ build-linux, build-windows ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from build.gradle.kts
+        id: version
+        run: |
+          VERSION=$(grep '^version=' gradle.properties | cut -d'=' -f2)
+          echo "Extracted version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List files for release
+        run: find artifacts
+
+      - name: Delete existing release (if exists)
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          echo "Checking and deleting existing release: $TAG"
+          gh release delete "$TAG" --cleanup-tag --yes || echo "Release $TAG does not exist or already deleted"
+        env:
+            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body: |
+            Автоматически сгенерированный релиз.
+            Лицензия: [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0.html)
+          files: |
+            artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
